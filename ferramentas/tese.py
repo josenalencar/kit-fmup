@@ -1,16 +1,51 @@
 # -*- coding: utf-8 -*-
-"""Analisa o PDF da tese antes de ir para a gráfica.
+"""Verificação de PRÉ-IMPRESSÃO do PDF da tese.
 
-Responde ao que a gráfica vai perguntar: quantas páginas, se são todas A4,
-quantas têm cor a sério, se as fontes estão incorporadas, e que espessura vai
-ter a lombada.
+NÃO lê o conteúdo. Não olha para o texto, citações, margens, paginação nem
+formatação. Responde só ao que a gráfica vai perguntar, e são cinco coisas:
+
+1. TAMANHO DAS PÁGINAS
+   Lê a caixa de cada página, converte para milímetros e compara com A4
+   (210 x 297) com 1 mm de tolerância. Apanha o artigo colado em formato
+   carta e a figura numa página deitada — que a gráfica imprime encolhidas
+   ou cortadas, e só se descobre com o livro na mão.
+
+2. PÁGINAS COM COR A SÉRIO
+   Desenha cada página em miniatura (36 ppp) e percorre um em cada sete
+   pixels. Cinzento tem os três canais RGB iguais; só há cor quando eles se
+   separam. Uma página conta como colorida quando algum ponto tem o canal
+   mais forte e o mais fraco separados por mais de LIMIAR_COR (18 em 255) —
+   margem que existe para não contar o serrilhado acinzentado das letras.
+   É uma amostragem, não um varrimento: uma marca colorida minúscula pode
+   escapar. Serve para orçamentar, não para certificar.
+
+3. FONTES INCORPORADAS
+   Para cada tipo de letra, vai ao objeto interno do PDF ver se lá está o
+   ficheiro da fonte. Se não estiver, o computador da gráfica substitui-a e
+   o texto muda de posição — parágrafos saltam de página.
+   Ressalva: as catorze fontes-base do PDF (Helvetica, Times, Courier)
+   legitimamente não trazem ficheiro incorporado e são assinaladas aqui.
+   Qualquer gráfica as tem. Esta verificação foi pensada para o miolo.
+
+4. IMAGENS DE BAIXA RESOLUÇÃO
+   Divide a largura da imagem em pixels pela largura em polegadas do sítio
+   onde está colada. Abaixo de DPI_MINIMO (150) assinala. No ecrã não se
+   nota; no papel nota-se.
+
+5. ESPESSURA DA LOMBADA
+   Conta as folhas (em frente e verso são metade das páginas) e multiplica
+   pela espessura típica de uma folha, por gramagem.
+   É uma ESTIMATIVA, não uma medição: serve para saber se o número que a
+   gráfica der faz sentido. Quem manda é a gráfica, que mede o miolo já
+   impresso.
 """
 import fitz
 
 A4 = (210.0, 297.0)
-TOLERANCIA_MM = 1.0
-LIMIAR_COR = 18
-DPI_MINIMO = 150
+TOLERANCIA_MM = 1.0      # o que ainda conta como A4
+LIMIAR_COR = 18          # separação entre canais RGB a partir da qual é cor
+DPI_MINIMO = 150         # abaixo disto uma imagem sai desfocada no papel
+AMOSTRAGEM = 7           # analisa um em cada N pixels, para ser rápido
 
 # espessura de uma folha, em mm, por gramagem — papel offset corrente
 FOLHA_MM = {80: 0.104, 90: 0.115, 100: 0.128, 120: 0.152}
@@ -41,6 +76,8 @@ def analisar(pdf_bytes, progresso=None):
         raise ValueError("Esse PDF não tem páginas.")
 
     # ---------------------------------------------------- tamanho das páginas
+    # A caixa da página vem em pontos (1 pt = 1/72 polegada). Converte-se para
+    # milímetros e compara-se com A4, com 1 mm de folga para arredondamentos.
     formatos, fora = {}, []
     for i, pag in enumerate(doc, 1):
         larg, alt = round(_mm(pag.rect.width), 1), round(_mm(pag.rect.height), 1)
@@ -49,13 +86,16 @@ def analisar(pdf_bytes, progresso=None):
             fora.append(i)
 
     # ------------------------------------------------------------------- cor
+    # Miniatura de cada página a 36 ppp, e amostragem de um em cada 7 pixels.
+    # Cinzento tem R=G=B; só há cor quando os canais se separam. Basta um
+    # ponto colorido para a página contar — daí o break.
     coloridas = []
     for i, pag in enumerate(doc, 1):
         if progresso and i % 10 == 0:
             progresso(i / n)
         pm = pag.get_pixmap(dpi=36, colorspace=fitz.csRGB)
         dados, passo = pm.samples, pm.n
-        for p in range(0, len(dados) - passo, passo * 7):
+        for p in range(0, len(dados) - passo, passo * AMOSTRAGEM):
             r, g, b = dados[p], dados[p + 1], dados[p + 2]
             if max(r, g, b) - min(r, g, b) > LIMIAR_COR:
                 coloridas.append(i)
@@ -64,6 +104,10 @@ def analisar(pdf_bytes, progresso=None):
         progresso(1.0)
 
     # --------------------------------------------------------------- fontes
+    # Uma fonte só viaja com o PDF se o objeto trouxer FontFile/FontDescriptor.
+    # Sem isso, a gráfica substitui-a e o texto muda de sítio. As fontes-base
+    # do PDF (Helvetica, Times, Courier) aparecem aqui por não as trazerem —
+    # é esperado, e qualquer gráfica as tem.
     sem_fonte = set()
     for pag in doc:
         for f in pag.get_fonts(full=True):
@@ -72,6 +116,9 @@ def analisar(pdf_bytes, progresso=None):
                 sem_fonte.add(f[3])
 
     # -------------------------------------------------------------- imagens
+    # Resolução efetiva = pixels da imagem a dividir pelo tamanho em polegadas
+    # do sítio onde ela está colada. Ignoram-se imagens com menos de 0,3 pol,
+    # que são ícones e não se notam.
     baixas = []
     for i, pag in enumerate(doc, 1):
         for info in pag.get_images(full=True):
@@ -84,6 +131,7 @@ def analisar(pdf_bytes, progresso=None):
                         baixas.append((i, int(dpi)))
                 break
 
+    # em frente e verso, duas páginas por folha
     folhas_fv = (n + 1) // 2
     lombada = {g: dict(frente_verso=round(folhas_fv * e, 1),
                        so_frente=round(n * e, 1))

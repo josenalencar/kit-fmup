@@ -44,8 +44,47 @@ t1, t2, t3, t4 = st.tabs(["1 · Verificar a tese", "2 · Formulários",
 # ═══════════════════════════════════════════════ 1. verificar a tese
 with t1:
     st.subheader("Verificar a tese antes de imprimir")
-    st.write("Carregue o PDF final da tese. Nada é guardado: o ficheiro é "
-             "analisado e desaparece quando fechar a página.")
+    st.write("**Isto não lê o conteúdo da tese.** Não olha para o texto, as "
+             "citações, as margens nem a paginação. É uma verificação de "
+             "pré-impressão: responde ao que a gráfica vai perguntar.")
+    st.caption("Nada é guardado. O ficheiro é analisado em memória e desaparece "
+               "quando fechar a página.")
+
+    with st.expander("O que é que ele verifica, exatamente"):
+        st.markdown(f"""
+**1 · O tamanho de cada página.** Lê a caixa de cada página, converte para
+milímetros e compara com A4 (210 × 297), com {tese.TOLERANCIA_MM:g} mm de
+tolerância. Apanha o artigo colado em formato carta e a figura numa página
+deitada — que a gráfica imprime encolhidas ou cortadas, e só se descobre com o
+livro na mão.
+
+**2 · Quais as páginas com cor a sério.** Desenha cada página em miniatura
+(36 ppp) e percorre um em cada {tese.AMOSTRAGEM} pixels. Cinzento tem os três
+canais de cor iguais; só há cor quando eles se separam. A página conta como
+colorida quando algum ponto tem o canal mais forte e o mais fraco separados por
+mais de **{tese.LIMIAR_COR} em 255** — margem que existe para não contar o
+serrilhado acinzentado das letras.
+*É uma amostragem, não um varrimento: uma marca colorida minúscula pode
+escapar. Serve para orçamentar, não para certificar.*
+
+**3 · Se as fontes viajam dentro do ficheiro.** Se não viajarem, o computador
+da gráfica substitui-as e o texto muda de posição — parágrafos saltam de
+página.
+*Ressalva: as catorze fontes-base do PDF (Helvetica, Times, Courier)
+legitimamente não trazem ficheiro incorporado e são assinaladas aqui. Qualquer
+gráfica as tem. A capa gerada no separador 3 usa Helvetica e vai aparecer
+assinalada — não é defeito.*
+
+**4 · Imagens que vão sair desfocadas.** Divide os pixels da imagem pelo
+tamanho em polegadas do sítio onde está colada. Abaixo de
+**{tese.DPI_MINIMO} ppp**, assinala. No ecrã não se nota; no papel nota-se.
+
+**5 · A espessura provável da lombada.** Conta as folhas — em frente e verso
+são metade das páginas — e multiplica pela espessura típica de uma folha, por
+gramagem.
+*É uma estimativa, não uma medição. Serve para saber se o número que a gráfica
+der faz sentido. Quem mede é ela, no miolo já impresso.*
+""")
     pdf = st.file_uploader("PDF da tese", type="pdf", key="tese")
 
     if pdf is not None:
@@ -78,6 +117,9 @@ with t1:
                 st.info(f"**Páginas a cores:** {tese.resumir(r['paginas_a_cores'])}"
                         "\n\nSe a diferença de preço for grande, peça orçamento "
                         "para imprimir só estas a cores e o resto a preto.")
+                st.caption(f"«Ter cor» quer dizer: algum ponto da página tem os "
+                           f"canais de cor separados por mais de {tese.LIMIAR_COR} "
+                           f"em 255. Cinzento tem-nos iguais.")
             else:
                 st.success("Nenhuma página tem cor — peça orçamento a preto e "
                            "branco, é bastante mais barato.")
@@ -88,6 +130,9 @@ with t1:
                          + "\n\nNo computador da gráfica podem ser trocadas por "
                          "outras e o texto muda de sítio. Volte a exportar o PDF "
                          "com as fontes incorporadas.")
+                st.caption("Se aqui aparecerem só Helvetica, Times ou Courier, "
+                           "pode ignorar: são fontes-base do PDF e todas as "
+                           "gráficas as têm.")
             if r["imagens_baixa_resolucao"]:
                 piores = r["imagens_baixa_resolucao"][:6]
                 st.warning(f"**{len(r['imagens_baixa_resolucao'])} imagem(ns) abaixo "
@@ -102,8 +147,10 @@ with t1:
                 "Só frente": [f'{v["so_frente"]:.1f} mm'
                               for v in r["lombada"].values()],
             })
-            st.caption("Estimativa. Quem manda é a gráfica, que mede o miolo já "
-                       "impresso. Capa dura acrescenta 5 a 6 mm.")
+            st.caption(f"Estimativa: {r['folhas_frente_verso']} folhas em frente e "
+                       f"verso, à espessura típica de cada papel. Quem manda é a "
+                       f"gráfica, que mede o miolo já impresso. Capa dura "
+                       f"acrescenta 5 a 6 mm.")
 
             st.markdown("##### Para colar no email às gráficas")
             st.code(tese.texto_para_a_grafica(r), language=None)
