@@ -159,9 +159,18 @@ der faz sentido. Quem mede é ela, no miolo já impresso.*
 # ═══════════════════════════════════════════════════ 2. formulários
 with t2:
     st.subheader("Formulários da FMUP")
-    st.write("Preencha o que souber. O que deixar em branco sai a **vermelho** "
-             "nos formulários, com a marca `[A PREENCHER]` — para não assinar "
-             "nada em branco.")
+    st.write("Preencha o que souber. Pode correr as vezes que quiser: ele diz-lhe "
+             "sempre o que ainda falta.")
+
+    modo = st.radio(
+        "O que fazer com os campos que ficarem por preencher",
+        ["Marcar a vermelho, com [A PREENCHER]",
+         "Deixar em branco, para preencher à mão"],
+        captions=["Impede que assine um formulário com buracos sem dar por isso.",
+                  "Para imprimir e preencher à caneta. A lista do que falta "
+                  "continua a aparecer aqui no ecrã."],
+        horizontal=False, key="modo_preench")
+    marcar = modo.startswith("Marcar")
 
     def _ou_none(v):
         v = (v or "").strip()
@@ -274,22 +283,47 @@ with t2:
         D.data_submissao = _ou_none(data_sub)
 
         try:
-            docs, falta = formularios.preencher(D)
+            docs, falta = formularios.preencher(D, marcar_em_falta=marcar)
         except Exception as e:
             st.error(f"Não consegui preencher os formulários: {e}")
         else:
             if falta:
-                st.warning(f"**Faltam {len(falta)} campo(s)** — saem a vermelho "
-                           "nos ficheiros:\n\n"
+                onde = ("saem a vermelho nos ficheiros" if marcar
+                        else "ficam em branco nos ficheiros, para preencher à mão")
+                aviso = ("**Não assine nem envie enquanto houver vermelho.**" if marcar
+                         else "**Preencha-os à caneta antes de assinar.** Repare que "
+                              "esta lista só existe aqui no ecrã: nos ficheiros os "
+                              "campos ficam vazios e não se distinguem dos outros.")
+                st.warning(f"**Faltam {len(falta)} campo(s)** — {onde}:\n\n"
                            + "\n".join(f"- {m}" for m in falta)
-                           + "\n\n**Não assine nem envie enquanto houver vermelho.**")
+                           + f"\n\n{aviso}")
             else:
-                st.success("Está tudo preenchido. Nenhum campo ficou a vermelho.")
-                st.info("A seguir: os Pareceres A2 e A3 são assinados pelo "
-                        "orientador e pelo coorientador; o A1 e a Declaração, por "
-                        "si. Pode assinar sem imprimir, com a Chave Móvel Digital "
-                        "em https://cmd.autenticacao.gov.pt — o Decreto-Lei "
-                        "12/2021 equipara-a à assinatura à mão.")
+                st.success("Está tudo preenchido. Não ficou nenhum campo por preencher.")
+
+            st.markdown("##### O que fazer com cada um destes ficheiros")
+            st.markdown("""
+| Ficheiro | Formato | Quem assina | Pronto a assinar? |
+|---|---|---|---|
+| **A1** Requerimento | `.docx` | **Você** | Falta exportar para PDF |
+| **A2** Parecer do orientador | PDF | O orientador | Sim |
+| **A3** Parecer do coorientador | PDF | O coorientador | Sim |
+| **A4** Declaração | PDF | **Você** | Sim |
+""")
+            st.warning("**O A1 sai em Word, não em PDF** — é o formato do modelo "
+                       "oficial da FMUP, e converter aqui exigiria instalar um "
+                       "processador de texto no servidor. Abra-o no Word, no "
+                       "LibreOffice ou no Google Docs, confirme que está tudo bem, "
+                       "e exporte para PDF antes de assinar. Aproveite para "
+                       "confirmar que as caixas de seleção dos anexos A a H ficaram "
+                       "marcadas como quer.")
+            st.info("**Assinar sem imprimir:** https://cmd.autenticacao.gov.pt — "
+                    "carrega o PDF, autentica-se, introduz o PIN. O Decreto-Lei "
+                    "12/2021 equipara a Chave Móvel Digital à assinatura à mão, "
+                    "por isso cumpre o «assinatura conforme documento de "
+                    "identificação» que o formulário exige. Serve também o Cartão "
+                    "de Cidadão, para quem tenha leitor. E se os orientadores "
+                    "preferirem imprimir, assinar e devolver uma fotografia, "
+                    "também serve.")
 
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:

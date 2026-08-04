@@ -45,15 +45,22 @@ def _branco(nome):
 
 
 class _Estado:
-    """Guarda o que ficou por preencher durante um preenchimento."""
+    """Guarda o que ficou por preencher durante um preenchimento.
 
-    def __init__(self):
+    `marcar=True`  -> os campos vazios saem a vermelho, com [A PREENCHER].
+                      Serve para não assinar um formulário com buracos.
+    `marcar=False` -> saem mesmo em branco, para se preencher à caneta.
+                      A lista do que falta continua a ser devolvida.
+    """
+
+    def __init__(self, marcar=True):
+        self.marcar = marcar
         self.falta = []
 
     def val(self, v, label=None):
         if v is None or (isinstance(v, str) and not v.strip()):
             self.falta.append(label or 'campo por identificar')
-            return MARK, True
+            return (MARK, True) if self.marcar else ('', False)
         return v, False
 
 # ───────────────────────────────────────────── 1. admission form (docx)
@@ -67,7 +74,7 @@ def _docx(D, est):
 
     def set_text(sdt, text, red=False):
         if text is None:
-            text, red = MARK, True
+            text, red = (MARK, True) if est.marcar else ('', False)
         content = sdt.find(W + 'sdtContent')
         # Inline controls hold w:r directly; block-level ones wrap it in a w:p.
         runs = content.findall(W + 'r')
@@ -270,8 +277,8 @@ def _parecer(D, est, role, who):
     # ainda caiba na primeira; se for curto, a segunda linha fica vazia.
     title = D.phd['titulo']
     if title is None:
-        est.falta.append('Título da tese')
-        put(tit1, MARK, None, 9.5)
+        # deixa o val() decidir: marca vermelha, ou vazio para preencher à mão
+        put(tit1, None, 'Título da tese', 9.5)
     elif len(title) <= 88:
         put(tit1, title, 'Título da tese', 9.5)
     else:
@@ -280,8 +287,7 @@ def _parecer(D, est, role, who):
         put(tit1, title[:cut], 'Título da tese', 9.5)
         put(tit2, title[cut:].strip(), 'Título da tese', 9.5)
     if D.data_submissao is None:
-        est.falta.append('Data de submissão')
-        put(dt, MARK, None, 8)
+        put(dt, None, 'Data de submissão', 8)
     else:
         dd, mm, yy = D.data_submissao.split('/')
         x0, y1 = dt[0], dt[3]
@@ -290,9 +296,13 @@ def _parecer(D, est, role, who):
     return doc.tobytes()
 
 
-def preencher(D):
-    """Devolve ({nome do ficheiro: bytes}, [campos por preencher])."""
-    est = _Estado()
+def preencher(D, marcar_em_falta=True):
+    """Devolve ({nome do ficheiro: bytes}, [campos por preencher]).
+
+    Com `marcar_em_falta=False` os campos vazios ficam mesmo vazios, prontos
+    a preencher à mão depois de impressos.
+    """
+    est = _Estado(marcar_em_falta)
     saida = {
         'A1 - Admissao as provas - PREENCHIDO.docx': _docx(D, est),
         'A2 - Parecer do Orientador - PREENCHIDO.pdf':
